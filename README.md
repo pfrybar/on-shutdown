@@ -46,6 +46,20 @@ WantedBy=multi-user.target
 
 Now whenever the system is shutdown or restarted, the HTTP request will be made.
 
+### Timeouts and InhibitDelayMaxSec
+
+When using systemd inhibitor locks to delay system shutdown, there is a limit to how long
+a lock can be held. This value is known as the
+[InhibitDelayMaxSec](https://www.freedesktop.org/software/systemd/man/latest/logind.conf.html#InhibitDelayMaxSec=).
+If a lock is held for longer than this value, the shutdown sequence will be started.
+When using `on-shutdown`, if the command takes longer than InhibitDelayMaxSec, it will
+be killed by the system. This will be detected and an error message will be printed:
+
+```
+Error: command did not complete within the InhibitDelayMaxSec (5s) and was killed - consider increasing this value:
+https://www.freedesktop.org/software/systemd/man/latest/logind.conf.html#InhibitDelayMaxSec=
+```
+
 ### Rationale
 
 While this tool makes it easy to run a command before a system begins to shuts down, there
