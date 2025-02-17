@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 )
@@ -28,6 +30,18 @@ func main() {
 		os.Exit(1)
 	}
 	defer conn.Close()
+
+	var delayMicros int64
+	prop, err := conn.Object(
+		"org.freedesktop.login1",
+		dbus.ObjectPath("/org/freedesktop/login1"),
+	).GetProperty("org.freedesktop.login1.Manager.InhibitDelayMaxUSec")
+	if err != nil {
+		fmt.Printf("error getting inhibit delay property: %v\n", err)
+		os.Exit(1)
+	}
+	prop.Store(&delayMicros)
+	delay := time.Duration(delayMicros * 1000)
 
 	var fd int
 	err = conn.Object(
@@ -56,27 +70,54 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Println("Waiting for shutdown...")
-
 	shutdownSignal := make(chan *dbus.Signal, 1)
 	conn.Signal(shutdownSignal)
-	for range shutdownSignal {
-		fmt.Printf("System is shutting down, running '%s'...\n", command)
 
-		out, err := exec.Command(name, args...).Output()
-		if err != nil {
-			fmt.Printf("error while running command: %v\n", err)
-			os.Exit(1)
-		}
-		output := string(out[:])
-		fmt.Println(output)
+	fmt.Println("Waiting for shutdown...")
+	_ = <-shutdownSignal
 
-		err = syscall.Close(fd)
-		if err != nil {
-			fmt.Printf("error closing file description: %v\n", err)
-			os.Exit(1)
+	fmt.Printf("System is shutting down, running '%s'...\n", command)
+	sysChannel := make(chan os.Signal, 1)
+	signal.Notify(sysChannel, syscall.SIGTERM)
+
+	start := time.Now()
+	cmdChannel := make(chan bool, 1)
+	go run(name, args, cmdChannel)
+
+	select {
+	case <-sysChannel:
+		end := time.Now()
+		if end.Sub(start) > delay {
+			fmt.Printf(
+				"Error: command did not complete within the InhibitDelayMaxSec (%s) and was killed - consider increasing this value: "+
+					"https://www.freedesktop.org/software/systemd/man/latest/logind.conf.html#InhibitDelayMaxSec=\n", delay,
+			)
 		}
+	case <-cmdChannel:
+		// no-op
 	}
 
-	fmt.Println("Finished")
+	err = syscall.Close(fd)
+	if err != nil {
+		fmt.Printf("error closing file description: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run(name string, args []string, cmdChannel chan<- bool) {
+	cmd := exec.Command(name, args...)
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	if err := cmd.Start(); err != nil {
+		fmt.Printf("error while starting command: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := cmd.Wait(); err != nil {
+		fmt.Printf("error while running command: %v\n", err)
+		cmdChannel <- false
+	} else {
+		fmt.Println("Command completed successfully")
+		cmdChannel <- true
+	}
 }
