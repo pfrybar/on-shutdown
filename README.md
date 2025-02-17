@@ -21,6 +21,31 @@ Example 2: send HTTP request before shutdown (in the background)
 nohup on-shutdown curl https://some.domain/some-endpoint &
 ```
 
+### Integrate with systemd
+
+`on-startup` can be run as a systemd service to automatically execute a command at
+every shutdown.
+
+#### Example
+
+1. Create a systemd unit called `/etc/systemd/system/http-shutdown.service`:
+```
+[Unit]
+Description=Run HTTP request before shutdown
+
+[Service]
+ExecStart=/usr/loca/bin/on-shutdown curl https://some.domain/some-endpoint
+
+[Install]
+WantedBy=multi-user.target
+```
+
+2. `sudo systemctl daemon-reload`
+3. `sudo systemctl enable http-shutdown.service`
+4. `sudo systemctl start http-shutdown.service`
+
+Now whenever the system is shutdown or restarted, the HTTP request will be made.
+
 ### Rationale
 
 While this tool makes it easy to run a command before a system begins to shuts down, there
