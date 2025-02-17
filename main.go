@@ -10,8 +10,11 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
+const version = "v0.1.0"
+
 func main() {
 	if len(os.Args) == 1 {
+		fmt.Printf("version: %s\n", version)
 		fmt.Println("usage: on-shutdown <command> [options...]")
 		os.Exit(0)
 	}
